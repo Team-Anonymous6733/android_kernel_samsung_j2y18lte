@@ -982,6 +982,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	/* calculate len requreed for copying */
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
+		uintptr_t mstart, mend;
 		ssize_t len = lpra[i].buf.len;
 		if (!len)
 			continue;
@@ -989,7 +990,15 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 			continue;
 		if (ctx->overps[oix]->offset == 0)
 			copylen = ALIGN(copylen, BALIGN);
-		copylen += ctx->overps[oix]->mend - ctx->overps[oix]->mstart;
+		mstart = ctx->overps[oix]->mstart;
+		mend = ctx->overps[oix]->mend;
+		VERIFY(err, (mend - mstart) <= LONG_MAX);
+		if (err)
+			goto bail;
+		copylen += mend - mstart;
+		VERIFY(err, copylen >= 0);
+		if (err)
+			goto bail;
 	}
 	ctx->used = copylen;
 
@@ -1054,7 +1063,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
 		struct fastrpc_mmap *map = ctx->maps[i];
-		int mlen = ctx->overps[oix]->mend - ctx->overps[oix]->mstart;
+		ssize_t mlen = ctx->overps[oix]->mend - ctx->overps[oix]->mstart;
 		uint64_t buf;
 		ssize_t len = lpra[i].buf.len;
 		if (!len)
@@ -1384,9 +1393,15 @@ static int fastrpc_init_process(struct fastrpc_file *fl,
 		inbuf.pgid = current->tgid;
 		inbuf.namelen = strlen(current->comm) + 1;
 		inbuf.filelen = init->filelen;
+		if (!access_ok(0, (void const __user *)init->file,
+				init->filelen))
+			goto bail;
 		VERIFY(err, !fastrpc_mmap_create(fl, init->filefd, init->file,
 					init->filelen, mflags, &file));
 		if (err)
+			goto bail;
+		if (!access_ok(1, (void const __user *)init->mem,
+				init->memlen))
 			goto bail;
 		inbuf.pageslen = 1;
 		VERIFY(err, !fastrpc_mmap_create(fl, init->memfd, init->mem,
