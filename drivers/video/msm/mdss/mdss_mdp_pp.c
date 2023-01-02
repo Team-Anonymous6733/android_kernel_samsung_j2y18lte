@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1575,11 +1575,16 @@ int mdss_mdp_scaler_lut_cfg(struct mdp_scale_data_v2 *scaler,
 	};
 
 	mdata = mdss_mdp_get_mdata();
+	
+	mutex_lock(&mdata->scaler_off->scaler_lock);
+	
 	lut_tbl = &mdata->scaler_off->lut_tbl;
 	if ((!lut_tbl) || (!lut_tbl->valid)) {
+		mutex_unlock(&mdata->scaler_off->scaler_lock);
 		pr_err("%s:Invalid QSEED3 LUT TABLE\n", __func__);
 		return -EINVAL;
 	}
+	
 	if ((scaler->lut_flag & SCALER_LUT_DIR_WR) ||
 		(scaler->lut_flag & SCALER_LUT_Y_CIR_WR) ||
 		(scaler->lut_flag & SCALER_LUT_UV_CIR_WR) ||
@@ -1630,6 +1635,8 @@ int mdss_mdp_scaler_lut_cfg(struct mdp_scale_data_v2 *scaler,
 		writel_relaxed(BIT(0), MDSS_MDP_REG_SCALER_COEF_LUT_CTRL +
 				offset);
 
+	mutex_unlock(&mdata->scaler_off->scaler_lock);
+	
 	return 0;
 }
 
@@ -3824,8 +3831,7 @@ int mdss_mdp_igc_lut_config(struct msm_fb_data_type *mfd,
 	disp_num = config->block - MDP_LOGICAL_BLOCK_DISP_0;
 
 	if (config->ops & MDP_PP_OPS_READ) {
-		if (config->len != IGC_LUT_ENTRIES &&
-		    !pp_ops[IGC].pp_get_config) {
+		if (config->len != IGC_LUT_ENTRIES) {
 			pr_err("invalid len for IGC table for read %d\n",
 			       config->len);
 			return -EINVAL;
